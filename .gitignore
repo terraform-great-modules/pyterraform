@@ -1,0 +1,16 @@
+
+# Ignore any configuration file, if present
+config.json
+
+# Python specific
+__pycache__
+*.pyc
+build
+dist
+
+
+# Virtualenv
+.venv
+.env
+venv
+env

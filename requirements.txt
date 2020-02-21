@@ -1,0 +1,6 @@
+boto3
+colorlog
+schema
+pyyaml
+requests
+deep_merge
