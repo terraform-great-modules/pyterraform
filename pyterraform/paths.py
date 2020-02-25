@@ -8,12 +8,45 @@ from .logs import logger
 from .utils import error
 from . import constants as const
 
+
+class Conf:
+    """Pyterraform configuration directory"""
+    def __init__(self, paths):
+        self.paths = paths
+
+    def __call__(self):
+        return self.paths.root() / const.CONF_DIR
+
+    def pyterraform(self):
+        """Configuration file for tfwrapper (YAML)"""
+        return self() / 'pyterraform.yml'
+
+    def state(self):
+        """Configuration file for state backends (YAML)"""
+        return self() / 'state.yml'
+
+class Stack:
+    """Stack directory"""
+    def __init__(self, paths):
+        self.paths = paths
+
+    def __call__(self):
+        if not self.paths._cache.get('stack'):
+            self.paths._cache['stack'] = self.paths.get_stack_path(const.CWD)
+        return self.paths._cache['stack']
+
+    def config(self):
+        """Stack config file as:
+        - <root_dir>/<stack/path/definition>/stack.yml"""
+        return self() / 'stack.yml'
+
+
 class Paths:
     """Project relevant paths.
     The following structure is expected:
-    /conf:           or what specified by configuration folders, for global options
-    /<stack>/<env>/: proper TF stack
-    /modules/:       shared modules
+    /pyterraform:    global options of the project and the wrapper
+    /<stack>/<env>/: proper TF stack (or what specified into pyterraform conf)
+    /modules/:       shared modules cacheing
     /terraform:      binary of terraform
     /.run:           runtime files"""
 
@@ -21,14 +54,14 @@ class Paths:
         self.project = project
         self._cache = dict()
 
-    @property
     def root(self):
-        """Terraform project root folder"""
+        """Wrapper root folder"""
         if not self._cache.get("root"):
-            for i in range(0, 4):
-                if (Path("../" * i) / self.conf_folder_name).is_dir():
+            for i in range(0, 5):
+                if (Path("../" * i) / const.CONF_DIR).is_dir():
                     self._cache["root"] = Path("../" * i).absolute().resolve()
-                    logger.debug("Detected projct root at '%s'", self._cache["root"])
+                    logger.debug("Detected root folder at '%s'",
+                                 self._cache["root"])
                     break
             else:
                 error("Cannot locate project root folder, are you inside it?")
@@ -36,73 +69,45 @@ class Paths:
         return self._cache["root"]
 
     @property
-    def conf_folder_name(self):
-        """conf folder (into root)"""
-        return self.project.cfg.tfw.confdir
+    def conf(self):
+        """Pyterraform configuration directory (under root path)"""
+        return Conf(self)
 
-    @property
     def terraform(self):
         """Terraform binary"""
-        return self.root / "terraform"
+        return self.root() / "terraform"
 
-    def get_stackinfo_from_cwd(self):
+    def _get_stackinfo_from_cwd(self, path=None):
         """Find, if any, the stack name from the working directory"""
+        path = Path(path) if path else Path.cwd()
         try:
-            children = Path.cwd().relative_to(self.root).parts
-            meta = dict(itertools.zip_longest(const.STACK_FOLDER_STRUCTURE, children))
+            children = path.relative_to(self.root()).parts
+            meta = dict(itertools.zip_longest(self.project.cfg.pyt.stack_folder_structure,
+                                              children))
         except ValueError:
             logger.info("Terraform is not running from root project folder"
                         "Working dir is: %s - root dir is %s",
-                        Path.cwd(), self.root)
+                        path, self.root())
         return meta
+
+    def get_stack_path(self, path=None):
+        """Compute from cwd the stack path"""
+        meta = self._get_stackinfo_from_cwd(path)
+        path = Path()
+        for dir_ in self.project.cfg.pyt.stack_folder_structure:
+            path = path / meta[dir_]
+        return self.root() / path
 
     @property
     def stack(self):
         """Stack path as, usually, <root>/<stack>/<env>.
         Such path could be defined from cli args or from cwd"""
-        path = list()
-        from_folder = self.get_stackinfo_from_cwd()
-        for dir_ in const.STACK_FOLDER_STRUCTURE:
-            if self.project.cfg.args.get(dir_):
-                path.append(self.project.cfg.cli_argsi[dir_])
-            elif from_folder.get(dir_):
-                path.append(from_folder[dir_])
-            else:
-                raise ValueError("Not possible to identify stack path")
-        return self.root.joinpath(*path)
+        return Stack(self)
 
-    @property
     def modules(self):
         """Terraform modules folder"""
-        return self.root / "modules"
-    @property
-    def conf(self):
-        """Configuration folder for wrapper"""
-        return self.root / self.conf_folder_name
-    @property
-    def conf_tfwrapper(self):
-        """Configuration file for tfwrapper (YAML)"""
-        return self.conf / 'config.yml'
-    @property
-    def conf_state(self):
-        """Configuration file for state backends (YAML)"""
-        return self.conf / 'state.yml'
-    @property
-    def stack_config(self):
-        """Stack config file could be any of:
-        - <root_dir>/conf/<stack>_<environment>_stack.yml
-        - <root_dir>/<stack>/<environment>/stack.yml"""
-        to_root = self.conf.joinpath(
-            "_".join([self.project.cfg.stack_definition.stack,
-                      self.project.cfg.stack_definition.environment,
-                      "stack.yml"]))
-        to_stack = self.stack.joinpath("stack.yml")
-        if to_stack.is_file() and to_root.is_file():
-            error("Not supported multiple configuration file."
-                  f"Use one of '{to_stack}' or '{to_root}'")
-            sys.exit(const.RC_KO)
-        return to_stack or to_root
-    @property
+        return self.root() / "modules"
+
     def run(self):
         """Execution data"""
-        return self.root / '.run'
+        return self.root() / '.run'

@@ -25,16 +25,16 @@ class Session:
         - cli
         - state.yml
         - environment"""
-        if self.project.cfg.cli_args.get("profile"):
-            return self.project.cfg.cli_args['profile']
-        if self.project.cfg.state.get('profile'):
-            return self.project.cfg.state['profile']
+        if self.project.cfg.pyt.get("config.profile"):
+            return self.project.cfg.pyt.get('config.profile')
+        if self.project.cfg.pyt.get('state.profile'):
+            return self.project.cfg.pyt.get('state.profile')
         return os.environ['AWS_PROFILE']
 
     @property
     def session_cache_file(self):
         """Temporary store credential"""
-        return self.project.path.run / f'session_cache_{self.profile}.pickle'
+        return self.project.path.run() / f'session_cache_{self.profile}.pickle'
         #return self.project.path.run / f'session_cache_{self.account}_{self.profile}.pickle'
 
     def _get_session(self):
@@ -49,8 +49,8 @@ class Session:
                                     region_name=session_cache['region'])
         else:
             session_args = {"profile_name": self.profile}
-            if 'region' in self.project.cfg.state:
-                session_args['region_name'] = self.project.cfg.state['region']
+            if 'region' in self.project.cfg.pyt.get('state'):
+                session_args['region_name'] = self.project.cfg.pyt.get('state.region')
             # TODO: add assume role
             try:
                 session = boto3.Session(**session_args)
@@ -69,7 +69,7 @@ class Session:
                 sys.exit(const.RC_UNK)
             #with os.fdopen(os.open(self.session_cache_file, os.O_WRONLY | os.O_CREAT,
             #                       mode=0o600), 'wb') as _f:
-            os.makedirs(self.project.path.run, exist_ok=True)
+            os.makedirs(self.project.path.run(), exist_ok=True)
             with open(self.session_cache_file, 'wb') as _f:
                 pickle.dump(session_cache, _f, pickle.HIGHEST_PROTOCOL)
         return session

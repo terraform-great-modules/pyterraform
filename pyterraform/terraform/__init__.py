@@ -3,10 +3,12 @@ import os
 from copy import deepcopy
 import subprocess
 import shutil
+import json
 
-from ..logs import logger
+from ..logs import logger, get_logger
 from . import binaries
 
+log = get_logger(__name__, "DEBUG")  # pylint: disable=invalid-name
 
 class Command:
     """Terraform command executor"""
@@ -20,14 +22,11 @@ class Command:
     @property
     def _tf_bin(self):
         """Terraform binary path"""
-        if not self.project.path.terraform.is_file():
-            self.utils.tf_align_version('0.12.21')
-        return self.project.path.terraform
-        #if self.project.path.terraform.is_file():
-        #    return self.project.path.terraform
+        if not self.project.path.terraform().is_file():
+            self.utils.tf_align_version(self.project.cfg.pyt.get('config.tf_version'))
+        return self.project.path.terraform()
         #if shutil.which("terraform") is not None:
         #    return shutil.which("terraform")
-        # else install it
 
     def update_tf_version(self, version):
         """Update terraform to the wanted version"""
@@ -50,34 +49,74 @@ class Command:
                 binaries.download_custom_provider(
                     provider, _config['version'], _config['extension'])
 
-    ########################
     ##  TF WRAPPING       ##
-    ########################
 
-    def version(self, wrapper_config=None):
+    def list_providers(self):
+        """Return list of providers"""
+        cmd = f"""find {self.project.path.stack()} -type f -iname "*.tf" -exec awk '
+          BEGIN {{print "List of providers and versions:"}}
+          / *provider +".*"/ {{
+                PROV = $$2;
+                while ($$0!~/^[^#]*}}/)
+                      {{if ($$0~/^ *version/) match($$0,/version.*= *"(.+)" */,VER);
+                       getline;}};
+                print "  ", PROV, " is " VER[1]}}' {{}} +
+        """
+        print(subprocess.Popen(cmd, shell=True).wait())
+
+    def list_modules(self):
+        """Return list of modules"""
+        cmd = f"""find {self.project.path.stack()} -type f -iname "*.tf" -exec awk '
+          BEGIN {{print "List of modules and required sources:"}}
+          / *module +".*"/ {{
+                USEDBY = USEDBY ", " $$2;
+                while ($$0!~/^[^#]*}}/)
+                {{if ($$0~/^ *source/) match($$0,/ *source *= *"(.+)" */,SOURCE) ;
+                       getline ; }};
+                print "  ", SOURCE[1], " used by ", USEDBY }}' {{}} +
+        """
+        print(subprocess.Popen(cmd, shell=True).wait())
+
+    def local_install(self):
+        """Locally install required binaries for stack execution"""
+        self.update_tf_providers()
+
+    def version(self):
         """Terraform version wrapper function."""
-        return self._run_terraform('version', wrapper_config)
+        return self._run_terraform('version')
 
-    def init(self, wrapper_config=None):
+    def console(self):
+        """Terraform console wrapper function."""
+        tf_params, env = self.project.cfg.context_for('console')
+        return self._run_terraform('console', tf_params=tf_params, env=env)
+
+    def providers(self):
+        """Terraform providers wrapper function."""
+        tf_params, env = self.project.cfg.context_for('providers')
+        return self._run_terraform('providers', tf_params=tf_params, env=env)
+
+    def plan(self):
+        """Terraform plan wrapper function."""
+        pipe_plan_command = self.project.cfg.pyt.get('config.pipe_plan_command')
+        tf_params, env = self.project.cfg.context_for('plan')
+        return self._run_terraform('plan', tf_params=tf_params, env=env, pipe=pipe_plan_command)
+
+    def init(self):
         """Terraform init wrapper function."""
-        params = ['-input=false',
-                  '-force-copy',
-                  '-lock=true',
-                  '-upgrade=true',
-                  '-verify-plugins=true']
-        if self.project.cfg.merged_variables.get('backend', {}).get('s3', {}):
-            params.append('-backend=true')
-        for key, value in \
-                self.project.cfg.merged_variables.get('backend', {}).get('s3', {}).items():
-            value = value.format(**self.project.cfg.merged_variables)
-            params.append(f'-backend-config={key}={value}')
-        return self._run_terraform('init', params)
+        tf_params, env = self.project.cfg.context_for('init')
+        tf_params.extend(['-input=false',
+                          '-force-copy',
+                          '-lock=true',
+                          #'-upgrade=true',
+                          '-get-plugins=true',
+                          '-verify-plugins=true'])
+        if self.project.cfg.pyt.get('state.backend', {}).get('s3', {}):
+            tf_params.append('-backend=true')
+            tf_params.extend(self.project.cfg.stack.backend_setup)
+        return self._run_terraform('init', tf_params=tf_params, env=env)
 
-    def _run_terraform(self, action, tf_params=None):
+    def _run_terraform(self, action, tf_params=None, env=None, pipe=None):
         """Run Terraform command."""
-        if not tf_params:
-            tf_params = self.project.cfg.cli_args.get('tf_params')
-
         # support for custom parameters
         command = [self._tf_bin, action]
         if tf_params is not None:
@@ -85,21 +124,21 @@ class Command:
                 tf_params = tf_params[1:]
             command += tf_params
 
-        cmd_env = deepcopy(os.environ)
-        cmd_env['PATH'] = "{path}{sep}{old_path}".format(
-            path=os.path.dirname(__file__), sep=os.pathsep, old_path=cmd_env.get('PATH', ''))
+        cmd_env = env if env else deepcopy(os.environ)
 
-        pipe_plan_command = self.project.cfg.tf.get('pipe_plan_command')
-        #pipe_plan = action == "plan" and wrapper_config.get('pipe_plan') and pipe_plan_command
-        pipe_plan = action == "plan" and self.project.cfg.tf.get('pipe_plan') and pipe_plan_command
-        stdout = subprocess.PIPE if pipe_plan else None
-        with subprocess.Popen(command, cwd=self.project.path.stack, env=cmd_env,
-                              shell=False, stdout=stdout) as process:
+        with subprocess.Popen(command, cwd=self.project.path.stack(),
+                              env=cmd_env, shell=False,
+                              stdout=subprocess.PIPE if pipe else None) as process:
             logger.debug('Execute command "%s"', command)
-            if pipe_plan:
-                logger.debug('Piping command "%s"', pipe_plan_command)
-                with subprocess.Popen(pipe_plan_command, cwd=self.project.path.stack, env=cmd_env,
-                                      shell=True, stdin=process.stdout) as pipe_process:
+            log.info("Running command: '%s'", ' '.join([str(x) for x in command]))
+            log.info("On path '%s'", self.project.path.stack())
+            #log.info('And with env: %s', {x: cmd_env[x] for x in sorted(dict(cmd_env))})
+            log.info('And with env: %s', json.dumps(dict(cmd_env), indent=2, sort_keys=True))
+            if pipe:
+                logger.debug('Piping command "%s"', pipe)
+                with subprocess.Popen(pipe, cwd=self.project.path.stack(),
+                                      env=cmd_env, shell=False,
+                                      stdin=process.stdout) as pipe_process:
                     try:
                         pipe_process.communicate()
                     except KeyboardInterrupt:
@@ -121,11 +160,10 @@ class Command:
 
     def run(self):
         """Execute the command asked for by the cli input"""
-        action = getattr(self, self.project.cfg.cli_args.get('subcommand'))
-        if not action:
-            return self._run_terraform(self.project.cfg.cli_args.get('subcommand'))
-            #return self._run_terraform(self.project.cfg.cli_args.get('subcommand'), wrapper_config)
-        logger.info("Going to run command '%s'", self.project.cfg.cli_args.get('func'))
+        action = getattr(self, self.project.input.args.get('subcommand'), None)
+        if action is None:
+            return self._run_terraform(self.project.input.args.get('subcommand'))
+        logger.info("Going to run command '%s'", self.project.input.args.get('subcommand'))
         return action()
 
 

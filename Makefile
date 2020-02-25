@@ -4,7 +4,7 @@
 MAKEFILE_VERSION := 0.1.1
 
 .ONESHELL:
-.SHELL := /usr/bin/bash
+SHELL := /usr/bin/bash
 .SHELLFLAGS = -ec  # NB: c is strictly required
 
 .PHONY: init compile clean
@@ -19,7 +19,7 @@ help:
 
 
 venv: venv/bin/activate
-	python3 -m pip install --user --upgrade setuptools wheel
+	$(VENV); python3 -m pip install --upgrade setuptools wheel
 
 venv/bin/activate: requirements.txt
 	test -d venv || virtualenv --python=python3 venv
@@ -29,8 +29,11 @@ venv/bin/activate: requirements.txt
 
 init: venv  ## Initialize local venv
 
+init_dev: venv  ## Initialize local venv for developing
+	$(VENV); pip install -Ur requirements-dev.txt
+
 compile: venv  ## Create python package locally
-	python3 setup.py sdist bdist_wheel
+	$(VENV); python3 setup.py sdist bdist_wheel
 
 test:
 	py.test tests
@@ -40,6 +43,6 @@ clean:  ## clean temporary filesystem
 	test -d pyterraform.egg-info && rm -rf pyterraform.egg-info
 	test -d build && rm -rf build
 	find -iname "*.pyc" -delete
-	find -iname "__python__" -delete
+	find -iname "__pycache__" -delete
 
 .PHONY: init test

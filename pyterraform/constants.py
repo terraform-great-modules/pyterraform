@@ -22,4 +22,7 @@ GITHUB_RELEASES = 'https://github.com/{}/releases'
 ARCH_NAME = get_architecture()
 PLATFORM_SYSTEM = platform.system().lower()
 
-HOME_DIR = str(Path.home())
+HOME_DIR = Path.home()
+CONF_DIR = Path('pyterraform')
+
+CWD = Path.cwd()

@@ -50,7 +50,7 @@ class Utils:
     @property
     def _tf_binary_cache(self):
         """Where tf binary versions are stored"""
-        return Path(self.project.cfg.tf['tf_binary_cache'])
+        return Path(self.project.cfg.pyt.get('config.tf_binary_cache'))
 
     def tf_cached_version(self, version):
         """Cached file binary location"""
@@ -81,11 +81,11 @@ class Utils:
     def update_tf_symlink(self, version):
         """Create local link to cached one"""
         # Doing symlink
-        if self.project.path.terraform.is_symlink():
-            self.project.path.terraform.unlink()
+        if self.project.path.terraform().is_symlink():
+            self.project.path.terraform().unlink()
         if not self.tf_cached_version(version).is_file():
             self.tf_download(version)
-        self.project.path.terraform.symlink_to(self.tf_cached_version(version))
+        self.project.path.terraform().symlink_to(self.tf_cached_version(version))
         logger.warning("Switch done, current terraform version is %s", version)
 
     def tf_align_version(self, version):
@@ -98,7 +98,7 @@ class Utils:
                   'it should be a version number like "X.Y.Z"')
         # Getting current version
         try:
-            pr_ = subprocess.run([self.project.path.terraform, '-v'],
+            pr_ = subprocess.run([self.project.path.terraform(), '-v'],
                                  stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
                                  check=True)
