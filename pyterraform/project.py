@@ -35,11 +35,9 @@ class Project:  # pylint: disable=too-few-public-methods
     def run(self):
         """Execute the command as request by cli input"""
         returncode = None
-        # check terraform version
-        #if args.subcommand not in ('foreach', 'providers', 'switchver', 'version'):
-        #    self.tf.check_tf_version()
-        #if args.subcommand in ["init", "bootstrap"]:
-        #    self.tf.update_tf_providers()
+        if self.input.args.get('version'):
+            print(f'Current pyterraform wrapper version is {const.VERSION}')
+            sys.exit(const.RC_OK)
 
         # run terraform finally!
         if self.cfg.pyt.get('config.tf_data_dir'):

@@ -2,6 +2,8 @@
 from pathlib import Path
 import platform
 
+# Pyterraform wrapper version
+VERSION = '0.1.0'
 
 def get_architecture():
     """Get system architecture name normalized for terraform."""

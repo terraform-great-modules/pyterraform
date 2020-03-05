@@ -20,6 +20,8 @@ def parse_args(project, args):  # pylint: disable=too-many-locals,too-many-state
         '-c', '--confdir',
         help='Configuration directory. Used to detect the project root. Defaults to conf.',
         default='conf')
+    parser.add_argument('-v', '--version', help='Print current pyterraform wrapper version',
+                        action='store_true', default=False)
     for stack_element in project.cfg.pyt.stack_folder_structure:  # at least stack and environment
         parser.add_argument(f'--{stack_element}',
                             help='Target stack definition. Autodetected if none is provided.',
@@ -136,7 +138,7 @@ def parse_args(project, args):  # pylint: disable=too-many-locals,too-many-state
 
     parsed_args = parser.parse_args(args)
 
-    if getattr(parsed_args, 'subcommand') is None:
+    if getattr(parsed_args, 'subcommand') is None and not getattr(parsed_args, 'version'):
         parser.print_help(file=sys.stderr)
         raise SystemExit(0)
 

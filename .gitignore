@@ -14,3 +14,4 @@ dist
 .env
 venv
 env
+pyterraform.egg-info/*

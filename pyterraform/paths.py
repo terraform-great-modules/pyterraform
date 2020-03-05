@@ -110,4 +110,7 @@ class Paths:
 
     def run(self):
         """Execution data"""
+        dir_ = self.root() / '.run'
+        if not dir_.is_dir():
+            dir_.mkdir(exist_ok=True)
         return self.root() / '.run'
